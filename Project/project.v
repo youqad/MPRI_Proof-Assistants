@@ -99,7 +99,7 @@ Ltac tauto2 := tauto2_aux 0.
 Section Examples2.
     Variables A B C D : Prop.
 
-    Lemma tauto_ex3 : (A /\ A) \/ True.
+    Lemma tauto_ex3 : ((((A /\ A) /\ A) /\ A) /\ A) \/ True.
     Proof.
         tauto2.
     Qed.
