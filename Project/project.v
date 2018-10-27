@@ -4,11 +4,10 @@
 
 (** *** Proof Assistants - Younesse Kaddar *)
 
-Require Import List Arith Lia Notations.
+Require Import Arith Notations List Lia Program Omega.
 Open Scope list_scope.
 Import ListNotations.
-Require Import Program.
-
+Set Implicit Arguments.
 
 Hint Extern 8 (_ = _ :> nat) => lia.
 Hint Extern 8 (_ <= _) => lia.
@@ -131,13 +130,11 @@ Notation "⊥" := (form_false) (at level 5).
 Definition form_of_var := fun (x: Var) => form_var x.
 Coercion form_of_var : Var >-> form.
 
+Inductive seq : Set :=
+    vdash : list form -> form -> seq.
 
-Definition seq := list form * form.
-
-Notation "Δ ⊢ A" := (Δ, A) (at level 65).
+Infix "⊢" := vdash (at level 65).
 Notation "∅ ⊢ A" := (nil ⊢ A) (at level 10).
-
-Check (nil ⊢ ⊤).
 
 
 Fact form_eq_dec : forall A B : form, {A = B} + {A <> B}.
@@ -172,18 +169,18 @@ Variables x y z t : Var.
 
 Eval compute in (pick_hyp ([ x ∧ y ; y ∨ ⊤ ; x → ⊥ ] ⊢ ⊤)).
 
-Definition apply_elim_rules (C : form) (hyps : form * list form) := 
-    match hyps with 
-        |  (* ⇒-E *)    A → B ⊢ Δ    => [B :: Δ ⊢ C; Δ ⊢ A]
-        |  (* ∧-E *)    A ∧ B ⊢ Δ    => [A :: B :: Δ ⊢ C]
-        |  (* ∨-E *)    A ∨ B ⊢ Δ    => [A :: Δ ⊢ C; B :: Δ ⊢ C]
+Definition apply_elim_rules (C : form) (Γ : form * list form) : list seq := 
+    match Γ with 
+        |  (* ⇒-E *)    (A → B, Δ)    => [Δ ++ [B] ⊢ C; Δ ⊢ A]
+        |  (* ∧-E *)    (A ∧ B, Δ)    => [Δ ++ [A; B] ⊢ C]
+        |  (* ∨-E *)    (A ∨ B, Δ)    => [Δ ++ [A] ⊢ C; Δ ++ [B] ⊢ C]
         | _                          => []
     end.
 
 Definition step (s : seq) : subgoals := let '(Δ ⊢ C) := s in
     let intro_rules := 
         match C with 
-            |  (* ⇒-I *)        A → B           => [[A :: Δ ⊢ B]]
+            |  (* ⇒-I *)        A → B           => [[Δ ++ [A] ⊢ B]]
             |  (* ∧-I *)        A ∧ B           => [[Δ ⊢ A; Δ ⊢ B]]
             |  (* ∨-I₁ ∨-I₂ *)  A ∨ B           => [[Δ ⊢ A]; [Δ ⊢ B]]
             | _                                 => []
@@ -193,7 +190,6 @@ Definition step (s : seq) : subgoals := let '(Δ ⊢ C) := s in
 Eval compute in (step ([x ∨ y] ⊢ z → t)).
 
 
-
 Fixpoint tauto (max_depth: nat) (s: seq) : bool :=
     match max_depth with
         | 0     => false
@@ -201,3 +197,96 @@ Fixpoint tauto (max_depth: nat) (s: seq) : bool :=
                     then true 
                     else existsb (forallb (tauto n)) (step s)
     end.
+
+Fixpoint size_form (φ : form) : nat := 
+    match φ with
+        | form_var _ | ⊤ | ⊥ => 0
+        | A ∧ B | A ∨ B | A → B => S (size_form A + size_form B)
+    end.
+
+Tactic Notation "int" tactic(t) := t; intuition.
+Tactic Notation "sint" tactic(t) := t; simpl; intuition.
+Tactic Notation "saut" tactic(t) := t; simpl; auto.
+
+
+Open Scope nat_scope.
+
+(* Print fold_left. *)
+
+Definition sum (l : list nat) := fold_right Nat.add 0 l.
+
+Fact sum_fst : forall l a, sum (a :: l) = a + sum l.
+Proof.
+    int induction l.
+Qed.
+
+Fact sum_app : forall l l', sum (l ++ l') = sum l + sum l'.
+Proof.
+    int induction l. 
+    rewrite <- app_comm_cons; repeat rewrite sum_fst.
+    int rewrite IHl.
+Qed.
+
+Hint Resolve map_app sum_app sum_fst.
+
+
+Definition size (s: seq) : nat := let '(Δ ⊢ A) := s in 
+    sum (map size_form Δ) + size_form A.
+
+Fact Forall_app: forall A (P:A -> Prop) l l', Forall P l /\ Forall P l' <-> Forall P (l ++ l').
+Proof.
+    split.
+    -   intros; induction l; int destruct H.
+        rewrite <- app_comm_cons; constructor; int inversion H.
+    -   intro; split; rewrite Forall_forall in * |- *; intros; int apply H.
+Qed.
+
+
+Lemma size_elim_rules_decreasing : forall C Γ, 
+    Forall (fun s' => size s' < size (fst Γ :: snd Γ ⊢ C)) (apply_elim_rules C Γ).
+    Proof. 
+        intros; destruct Γ; destruct f; repeat (sint constructor).
+Admitted.
+
+Definition prepend {A: Type} (a: A) '(b, l) : A * list A := (b, a :: l).
+
+Lemma pick_hyp_prepend : forall φ l l', pick_hyp_aux (φ::l) l' = map (prepend φ) (pick_hyp_aux l l').
+Proof.
+    intros; revert φ l; sint induction l'.
+    now rewrite IHl'.
+Qed.
+
+Ltac constructors_Forall := repeat (repeat apply Forall_nil; saut (repeat apply Forall_cons)).
+Ltac sum_map_app := repeat (rewrite map_app + rewrite sum_app).
+Ltac Forall_sum_map := constructors_Forall; saut sum_map_app.
+
+
+Lemma Forall_concat_prepend : forall l C n φ, 
+    Forall (fun s' : seq => size s' < n) (concat (map (apply_elim_rules C) l))
+    -> 
+    Forall (fun s' : seq => size s' < size_form φ + n)
+        (concat (map (fun Γ => (apply_elim_rules C) (prepend φ Γ)) l)).
+Proof.
+    intros; revert φ; sint induction l.  
+    rewrite <- Forall_app; split.
+    -   destruct a as (ψ, Δ); Forall_sum_map.
+        simpl in H; apply <- Forall_app in H; destruct H as [? _].
+        destruct ψ; Forall_sum_map; 
+        repeat match goal with 
+            | H : Forall _ _  |- _ => inversion H; clear H
+        end; unfold size in * |-; 
+        repeat (rewrite map_app in * |- + rewrite sum_app in * |-); 
+        int simpl in * |-.
+    -   apply IHl; int simpl in * |-; apply <- Forall_app in H; now destruct H as [_ ?].
+Qed.
+
+
+Theorem size_decreasing : forall s, Forall (fun s' => size s' < size s) (concat (step s)).
+Proof.
+    destruct s; induction l; unfold step;
+    rewrite concat_app; repeat (apply Forall_app; sint split).
+    1-3: destruct f; try destruct a; Forall_sum_map.
+    simpl in IHl. rewrite pick_hyp_prepend. rewrite map_map.
+    rewrite concat_app in IHl; apply <- Forall_app in IHl; destruct IHl as [_ ?].
+    rewrite <- plus_assoc; now apply Forall_concat_prepend. 
+Qed.

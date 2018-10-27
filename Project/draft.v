@@ -39,3 +39,14 @@ Notation " ⊢ A" := ((nil, A) : seq).
 
 Infix "⊢" := vdash (at level 65).
 Notation "∅ ⊢ A" := (nil ⊢ A) (at level 10). *)
+
+
+(* Definition seq := (list form) * form.
+
+Notation "Δ ⊢ A" := (Δ, A) (at level 65).
+Notation "∅ ⊢ A" := (nil ⊢ A) (at level 10).
+
+Check (nil ⊢ ⊤). *)
+
+(* Opaque pick_hyp.
+Transparent pick_hyp. *)
