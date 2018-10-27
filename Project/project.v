@@ -241,13 +241,6 @@ Proof.
     -   intro; split; rewrite Forall_forall in * |- *; intros; int apply H.
 Qed.
 
-
-Lemma size_elim_rules_decreasing : forall C Γ, 
-    Forall (fun s' => size s' < size (fst Γ :: snd Γ ⊢ C)) (apply_elim_rules C Γ).
-    Proof. 
-        intros; destruct Γ; destruct f; repeat (sint constructor).
-Admitted.
-
 Definition prepend {A: Type} (a: A) '(b, l) : A * list A := (b, a :: l).
 
 Lemma pick_hyp_prepend : forall φ l l', pick_hyp_aux (φ::l) l' = map (prepend φ) (pick_hyp_aux l l').
@@ -259,7 +252,6 @@ Qed.
 Ltac constructors_Forall := repeat (repeat apply Forall_nil; saut (repeat apply Forall_cons)).
 Ltac sum_map_app := repeat (rewrite map_app + rewrite sum_app).
 Ltac Forall_sum_map := constructors_Forall; saut sum_map_app.
-
 
 Lemma Forall_concat_prepend : forall l C n φ, 
     Forall (fun s' : seq => size s' < n) (concat (map (apply_elim_rules C) l))
@@ -274,9 +266,9 @@ Proof.
         destruct ψ; Forall_sum_map; 
         repeat match goal with 
             | H : Forall _ _  |- _ => inversion H; clear H
-        end; unfold size in * |-; 
-        repeat (rewrite map_app in * |- + rewrite sum_app in * |-); 
-        int simpl in * |-.
+        end; unfold size in * |-.
+        all: repeat (rewrite map_app in * |- + rewrite sum_app in * |-). 
+        all: int simpl in * |-.
     -   apply IHl; int simpl in * |-; apply <- Forall_app in H; now destruct H as [_ ?].
 Qed.
 
