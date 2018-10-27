@@ -4,7 +4,11 @@
 
 (** *** Proof Assistants - Younesse Kaddar *)
 
-Require Import Utf8 List Arith Lia.
+Require Import List Arith Lia Notations.
+Open Scope list_scope.
+Import ListNotations.
+Require Import Program.
+
 
 Hint Extern 8 (_ = _ :> nat) => lia.
 Hint Extern 8 (_ <= _) => lia.
@@ -89,7 +93,7 @@ Ltac tauto2_aux n :=
         | H : ?A /\ ?B  |- _ => idtac "[Depth: " n "] ∧-E on " A " ∧ " B; destruct H as [H1 H2]; tauto2_aux (S n); fail 1
         |   |- ?A \/ ?B => idtac "[Depth: " n "] ∨-I₁ on " A " ∨ " B; left; tauto2_aux (S n)
         |   |- ?A \/ ?B => idtac "[Depth: " n "] ∨-I₂ on " A " ∨ " B; right; tauto2_aux (S n)
-        | H : ?A \/ ?B  |- _ => idtac "[Depth: " n "] ∨-E on " A " ∨ " B; destruct H; tauto2_aux (S n)
+        | H : ?A \/ ?B  |- _ => idtac "[Depth: " n "] ∨-E on " A " ∨ " B; destruct H; (tauto2_aux (S n) + fail 1)
         | _ => idtac "[Depth: " n "] Backtrack"; fail
 end.
 
@@ -105,8 +109,12 @@ Section Examples2.
     Qed.
 End Examples2.
 
+(* Type of variables *)
+Variable Var : Set.
+Parameter Var_eq_dec: forall (x y: Var), {x = y}+{x <> y}. (* Decidable equality *)
+
 Inductive form : Set :=
-  | form_var : nat -> form
+  | form_var : Var -> form
   | form_true : form
   | form_false : form
   | form_and : form -> form -> form
@@ -114,46 +122,82 @@ Inductive form : Set :=
   | form_implies : form -> form -> form.
 
 Hint Constructors form.
-Notation "A ∧ B" := (form_and A B) (at level 80, right associativity).
-Notation "A ∨ B" := (form_or A B) (at level 85, right associativity).
-Notation "A ⇒ B" := (form_implies A B) (at level 99, right associativity, B at level 200).
+Notation "A ∧ B" := (form_and A B) (at level 30, right associativity).
+Notation "A ∨ B" := (form_or A B) (at level 35, right associativity).
+Notation "A → B" := (form_implies A B) (at level 49, right associativity, B at level 50).
 Notation "⊤" := (form_true) (at level 5).
 Notation "⊥" := (form_false) (at level 5).
-Notation "# n" := (form_var n) (at level 2).
 
-Definition seq := prod (list form) form.
-Notation "x ⊢ y" := ((x, y) : seq) (at level 2).
+Definition form_of_var := fun (x: Var) => form_var x.
+Coercion form_of_var : Var >-> form.
+
+
+Definition seq := list form * form.
+
+Notation "Δ ⊢ A" := (Δ, A) (at level 65).
+Notation "∅ ⊢ A" := (nil ⊢ A) (at level 10).
+
+Check (nil ⊢ ⊤).
+
 
 Fact form_eq_dec : forall A B : form, {A = B} + {A <> B}.
-Proof.
-    do 2 decide equality.
+Proof with apply Var_eq_dec.
+    decide equality...
 Qed.
 
-Ltac destruct_sumbool := 
-    match goal with
-        | H: sumbool _ _ |- _ => destruct H
-    end.
-
 Definition form_in_dec : forall (A: form) (Δ : list form), {In A Δ} + {~ In A Δ}.
-    induction Δ. 
-        now right.
-        simpl; pose proof form_eq_dec a A.
-        do 2 destruct_sumbool;
-        match goal with
-            | _: In _ _ |- _ => left
-            | _: _ = _ |- _ => left
-            | |- _ => right
-        end; try solve [now left | now right | intuition].
+    apply (in_dec form_eq_dec).
 Defined.
-
 
 Definition is_leaf (s : seq) : bool := 
     match s with
-        | (_, ⊤) => true
-        | (Δ, A) =>  if form_in_dec ⊥ Δ then true
+        | _ ⊢ ⊤ => true
+        | Δ ⊢ A =>  if form_in_dec ⊥ Δ then true
                     else if form_in_dec A Δ then true
                     else false
     end.
 
 Definition subgoals := list (list seq).
 
+Fixpoint pick_hyp_aux (l l': list form) : list (form * list form) := 
+    match l' with 
+        | nil => nil
+        | h :: t => (h, l ++ t) :: (pick_hyp_aux (l ++ [ h ]) t)
+    end.
+
+Definition pick_hyp (s: seq) : list (form * list form) := 
+    match s with Δ ⊢ _ => pick_hyp_aux nil Δ end.
+
+Variables x y z t : Var.
+
+Eval compute in (pick_hyp ([ x ∧ y ; y ∨ ⊤ ; x → ⊥ ] ⊢ ⊤)).
+
+Definition apply_elim_rules (C : form) (hyps : form * list form) := 
+    match hyps with 
+        |  (* ⇒-E *)    A → B ⊢ Δ    => [B :: Δ ⊢ C; Δ ⊢ A]
+        |  (* ∧-E *)    A ∧ B ⊢ Δ    => [A :: B :: Δ ⊢ C]
+        |  (* ∨-E *)    A ∨ B ⊢ Δ    => [A :: Δ ⊢ C; B :: Δ ⊢ C]
+        | _                          => []
+    end.
+
+Definition step (s : seq) : subgoals := let '(Δ ⊢ C) := s in
+    let intro_rules := 
+        match C with 
+            |  (* ⇒-I *)        A → B           => [[A :: Δ ⊢ B]]
+            |  (* ∧-I *)        A ∧ B           => [[Δ ⊢ A; Δ ⊢ B]]
+            |  (* ∨-I₁ ∨-I₂ *)  A ∨ B           => [[Δ ⊢ A]; [Δ ⊢ B]]
+            | _                                 => []
+        end 
+    in intro_rules ++ map (apply_elim_rules C) (pick_hyp s).
+
+Eval compute in (step ([x ∨ y] ⊢ z → t)).
+
+
+
+Fixpoint tauto (max_depth: nat) (s: seq) : bool :=
+    match max_depth with
+        | 0     => false
+        | S n   => if is_leaf s 
+                    then true 
+                    else existsb (forallb (tauto n)) (step s)
+    end.
