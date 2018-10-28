@@ -205,6 +205,7 @@ Fixpoint size_form (φ : form) : nat :=
     end.
 
 Tactic Notation "int" tactic(t) := t; intuition.
+Tactic Notation "aut" tactic(t) := t; auto.
 Tactic Notation "sint" tactic(t) := t; simpl; intuition.
 Tactic Notation "saut" tactic(t) := t; simpl; auto.
 
@@ -249,7 +250,7 @@ Proof.
     now rewrite IHl'.
 Qed.
 
-Ltac constructors_Forall := repeat (repeat apply Forall_nil; saut (repeat apply Forall_cons)).
+Ltac constructors_Forall := repeat (repeat apply Forall_nil; repeat apply Forall_cons; simpl).
 Ltac sum_map_app := repeat (rewrite map_app + rewrite sum_app).
 Ltac Forall_sum_map := constructors_Forall; saut sum_map_app.
 
@@ -261,24 +262,25 @@ Lemma Forall_concat_prepend : forall l C n φ,
 Proof.
     intros; revert φ; sint induction l.  
     rewrite <- Forall_app; split.
-    -   destruct a as (ψ, Δ); Forall_sum_map.
+    -   destruct a as (ψ, Δ); simpl.
         simpl in H; apply <- Forall_app in H; destruct H as [? _].
         destruct ψ; Forall_sum_map; 
         repeat match goal with 
             | H : Forall _ _  |- _ => inversion H; clear H
         end; unfold size in * |-.
         all: repeat (rewrite map_app in * |- + rewrite sum_app in * |-). 
-        all: int simpl in * |-.
-    -   apply IHl; int simpl in * |-; apply <- Forall_app in H; now destruct H as [_ ?].
+        all: aut simpl in * |-.
+    -   apply IHl; simpl in * |-; apply <- Forall_app in H; now destruct H as [_ ?].
 Qed.
 
 
 Theorem size_decreasing : forall s, Forall (fun s' => size s' < size s) (concat (step s)).
 Proof.
     destruct s; induction l; unfold step;
-    rewrite concat_app; repeat (apply Forall_app; sint split).
+    rewrite concat_app; repeat (apply Forall_app; saut split).
     1-3: destruct f; try destruct a; Forall_sum_map.
     simpl in IHl. rewrite pick_hyp_prepend. rewrite map_map.
     rewrite concat_app in IHl; apply <- Forall_app in IHl; destruct IHl as [_ ?].
-    rewrite <- plus_assoc; now apply Forall_concat_prepend. 
+    rewrite <- plus_assoc; now apply Forall_concat_prepend.
 Qed.
+
