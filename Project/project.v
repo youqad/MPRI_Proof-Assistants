@@ -4,7 +4,7 @@
 
 (** *** Proof Assistants - Younesse Kaddar *)
 
-Require Import Arith Notations List Lia Program Omega.
+Require Import Prelude Bool List Lia Program Omega.
 Open Scope list_scope.
 Import ListNotations.
 Set Implicit Arguments.
@@ -109,10 +109,11 @@ Section Examples2.
 End Examples2.
 
 (* Type of variables *)
-Variable Var : Set.
-Parameter Var_eq_dec: forall (x y: Var), {x = y}+{x <> y}. (* Decidable equality *)
+Definition Var := nat.
+Definition Var_eq_dec := Nat.eq_dec.
+(* : forall (x y: Var), {x = y}+{x <> y}. Decidable equality *)
 
-Inductive form : Set :=
+ Inductive form : Set :=
   | form_var : Var -> form
   | form_true : form
   | form_false : form
@@ -126,8 +127,9 @@ Notation "A ∨ B" := (form_or A B) (at level 35, right associativity).
 Notation "A → B" := (form_implies A B) (at level 49, right associativity, B at level 50).
 Notation "⊤" := (form_true) (at level 5).
 Notation "⊥" := (form_false) (at level 5).
+Notation "# x" := (form_var x) (at level 10).
 
-Definition form_of_var := fun (x: Var) => form_var x.
+Definition form_of_var := fun (x: Var) => # x.
 Coercion form_of_var : Var >-> form.
 
 Inductive seq : Set :=
@@ -144,6 +146,10 @@ Qed.
 
 Definition form_in_dec : forall (A: form) (Δ : list form), {In A Δ} + {~ In A Δ}.
     apply (in_dec form_eq_dec).
+Defined.
+
+Definition Var_in_dec : forall (x: Var) (l : list Var), {In x l} + {~ In x l}.
+    apply (in_dec Var_eq_dec).
 Defined.
 
 Definition is_leaf (s : seq) : bool := 
@@ -174,7 +180,7 @@ Definition apply_elim_rules (C : form) (Γ : form * list form) : list seq :=
         |  (* ⇒-E *)    (A → B, Δ)    => [Δ ++ [B] ⊢ C; Δ ⊢ A]
         |  (* ∧-E *)    (A ∧ B, Δ)    => [Δ ++ [A; B] ⊢ C]
         |  (* ∨-E *)    (A ∨ B, Δ)    => [Δ ++ [A] ⊢ C; Δ ++ [B] ⊢ C]
-        | _                          => []
+        | _                           => []
     end.
 
 Definition step (s : seq) : subgoals := let '(Δ ⊢ C) := s in
@@ -200,14 +206,16 @@ Fixpoint tauto (max_depth: nat) (s: seq) : bool :=
 
 Fixpoint size_form (φ : form) : nat := 
     match φ with
-        | form_var _ | ⊤ | ⊥ => 0
+        | # _ | ⊤ | ⊥ => 0
         | A ∧ B | A ∨ B | A → B => S (size_form A + size_form B)
     end.
 
 Tactic Notation "int" tactic(t) := t; intuition.
 Tactic Notation "aut" tactic(t) := t; auto.
 Tactic Notation "sint" tactic(t) := t; simpl; intuition.
+Tactic Notation "sint_all" tactic(t) := t; simpl in *|-*; intuition.
 Tactic Notation "saut" tactic(t) := t; simpl; auto.
+Tactic Notation "saut_all" tactic(t) := t; simpl in *|-*; auto.
 
 
 Open Scope nat_scope.
@@ -237,8 +245,8 @@ Definition size (s: seq) : nat := let '(Δ ⊢ A) := s in
 Fact Forall_app: forall A (P:A -> Prop) l l', Forall P l /\ Forall P l' <-> Forall P (l ++ l').
 Proof.
     split.
-    -   intros; induction l; int destruct H.
-        rewrite <- app_comm_cons; constructor; int inversion H.
+    -   intros; induction l; aut destruct H.
+        rewrite <- app_comm_cons; constructor; aut inversion H.
     -   intro; split; rewrite Forall_forall in * |- *; intros; int apply H.
 Qed.
 
@@ -246,8 +254,7 @@ Definition prepend {A: Type} (a: A) '(b, l) : A * list A := (b, a :: l).
 
 Lemma pick_hyp_prepend : forall φ l l', pick_hyp_aux (φ::l) l' = map (prepend φ) (pick_hyp_aux l l').
 Proof.
-    intros; revert φ l; sint induction l'.
-    now rewrite IHl'.
+    intros; revert φ l; sint induction l'. now rewrite IHl'.
 Qed.
 
 Ltac constructors_Forall := repeat (repeat apply Forall_nil; repeat apply Forall_cons; simpl).
@@ -268,8 +275,7 @@ Proof.
         repeat match goal with 
             | H : Forall _ _  |- _ => inversion H; clear H
         end; unfold size in * |-.
-        all: repeat (rewrite map_app in * |- + rewrite sum_app in * |-). 
-        all: aut simpl in * |-.
+        all: saut_all (repeat (rewrite map_app in * |- + rewrite sum_app in * |-)). 
     -   apply IHl; simpl in * |-; apply <- Forall_app in H; now destruct H as [_ ?].
 Qed.
 
@@ -283,4 +289,83 @@ Proof.
     rewrite concat_app in IHl; apply <- Forall_app in IHl; destruct IHl as [_ ?].
     rewrite <- plus_assoc; now apply Forall_concat_prepend.
 Qed.
+
+Fixpoint sem_val (valuation: Var -> Prop) (φ: form) : Prop := 
+    match φ with
+        | ⊤         => True
+        | ⊥         => False
+        | # x       => valuation x
+        | A ∧ B     => (sem_val valuation A) /\  (sem_val valuation B)
+        | A ∨ B     => (sem_val valuation A) \/  (sem_val valuation B)
+        | A → B     => (sem_val valuation A) ->  (sem_val valuation B)
+    end.
+
+Definition sem (φ: form) : Prop := forall valuation, sem_val valuation φ.
+
+Notation "⟦ φ ⟧_ v" := (sem_val v φ) (at level 55).
+Notation "⟦ φ ⟧" := (sem φ) (at level 55).
+
+Definition val (x': Var) : Prop := match x' with 
+    | 1 | 2 | 4 => True
+    | _ => False
+    end.
+
+Example ex_sem_1 : ⟦ # 1 ∧ # 4 ⟧_val.
+Proof. 
+    now simpl.
+Qed.
+
+Example ex_sem_2 : ~ ⟦ # 1 ∨ # 2 ⟧.
+Proof. 
+    intro; unfold sem in H; saut_all (pose proof (H (fun n => False))).
+Qed.
+
+Definition is_valid_seq '(Δ ⊢ A) := forall valuation, Forall (sem_val valuation) Δ -> sem_val valuation A.
+Definition is_valid_subgoal : subgoals -> Prop := Exists (Forall is_valid_seq).
+
+Theorem soundness_leaf : forall s, is_leaf s = true -> is_valid_seq s.
+Proof.
+    intros; unfold is_leaf in H; destruct s;
+    sint_all destruct (form_eq_dec f ⊤).
+    now subst.
+    destruct f; simpl in H; int destruct (form_in_dec ⊥ l); unfold sem_val;
+    all: match goal with 
+        | _ : In ⊥ _ |- _ => apply Forall_forall with (x := ⊥) in H0; int simpl in H0
+        | _ : context[ form_in_dec ?f _ ] |- _ => destruct (form_in_dec f l); apply Forall_forall with (x := f) in H0; int simpl in H0
+    end.
+Qed.
+
+
+Fact Exists_app: forall A (P:A -> Prop) l l', Exists P l \/ Exists P l' <-> Exists P (l ++ l').
+Proof.
+    split.
+    -   intros; induction l; aut destruct H.
+        exfalso; now apply (Exists_nil P).
+        all: rewrite <- app_comm_cons. 
+        aut inversion H.
+        apply Exists_cons_tl; aut apply IHl. 
+    -   intro; rewrite Exists_exists in * |- *; do 2 destruct H. 
+        apply in_app_or in H; destruct H; [left; eauto | right; rewrite Exists_exists; eauto].
+Qed.
+
+(* Ltac constructors_Exists := repeat (repeat apply Exists_cons_hd; repeat apply Exists_cons_tl; simpl). *)
+
+Theorem soundness_step : forall s, is_valid_subgoal (step s) -> is_valid_seq s.
+Proof.
+    unfold is_valid_subgoal; unfold is_valid_seq; unfold step;
+    destruct s; intros; rewrite <- Exists_app in  *|-; destruct H.
+    -   destruct f.
+        1-3: exfalso; now apply Exists_nil in H.
+        1-2: sint unfold sem.
+        1-2: apply Exists_cons in H; destruct H; inversion H; int inversion H4.
+        apply Exists_cons in H; destruct H; 
+            int inversion H. 
+            1-2: int inversion H2.
+        apply Exists_cons in H; destruct H; inversion H. 
+        unfold sem. int rewrite <- Forall_app in H4; cut (Forall sem [f1]).
+        aut constructor; int unfold sem. 
+
+    
+
+
 
