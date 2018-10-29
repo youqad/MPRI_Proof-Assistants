@@ -328,7 +328,7 @@ Proof.
     intros; unfold is_leaf in H; destruct s;
     sint_all destruct (form_eq_dec f ⊤).
     now subst.
-    destruct f; simpl in H; int destruct (form_in_dec ⊥ l); unfold sem_val;
+    destruct f; simpl in H; int destruct (form_in_dec ⊥ l); unfold sem_val.
     all: match goal with 
         | _ : In ⊥ _ |- _ => apply Forall_forall with (x := ⊥) in H0; int simpl in H0
         | _ : context[ form_in_dec ?f _ ] |- _ => destruct (form_in_dec f l); apply Forall_forall with (x := f) in H0; int simpl in H0
@@ -354,16 +354,15 @@ Theorem soundness_step : forall s, is_valid_subgoal (step s) -> is_valid_seq s.
 Proof.
     unfold is_valid_subgoal; unfold is_valid_seq; unfold step;
     destruct s; intros; rewrite <- Exists_app in  *|-; destruct H.
-    -   destruct f.
-        1-3: exfalso; now apply Exists_nil in H.
-        1-2: sint unfold sem.
+    -   sint destruct f.
+        1-2: exfalso; now apply Exists_nil in H.
         1-2: apply Exists_cons in H; destruct H; inversion H; int inversion H4.
         apply Exists_cons in H; destruct H; 
             int inversion H. 
             1-2: int inversion H2.
-        apply Exists_cons in H; destruct H; inversion H. 
-        unfold sem. int rewrite <- Forall_app in H4; cut (Forall sem [f1]).
-        aut constructor; int unfold sem. 
+        apply Exists_cons in H; destruct H; inversion H.
+        apply (H4 valuation); aut rewrite <- Forall_app.
+    - 
 
     
 
