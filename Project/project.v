@@ -175,11 +175,11 @@ Variables x y z t : Var.
 
 Eval compute in (pick_hyp ([ x ∧ y ; y ∨ ⊤ ; x → ⊥ ] ⊢ ⊤)).
 
-Definition apply_elim_rules (C : form) (Γ : form * list form) : list seq := 
+Definition apply_elim_rules (C : form) (Γ : form * list form) : list (list seq) := 
     match Γ with 
-        |  (* ⇒-E *)    (A → B, Δ)    => [Δ ++ [B] ⊢ C; Δ ⊢ A]
-        |  (* ∧-E *)    (A ∧ B, Δ)    => [Δ ++ [A; B] ⊢ C]
-        |  (* ∨-E *)    (A ∨ B, Δ)    => [Δ ++ [A] ⊢ C; Δ ++ [B] ⊢ C]
+        |  (* ⇒-E *)    (A → B, Δ)    => [[Δ ++ [B] ⊢ C; Δ ⊢ A]]
+        |  (* ∧-E *)    (A ∧ B, Δ)    => [[Δ ++ [A; B] ⊢ C]]
+        |  (* ∨-E *)    (A ∨ B, Δ)    => [[Δ ++ [A] ⊢ C; Δ ++ [B] ⊢ C]]
         | _                           => []
     end.
 
@@ -191,7 +191,7 @@ Definition step (s : seq) : subgoals := let '(Δ ⊢ C) := s in
             |  (* ∨-I₁ ∨-I₂ *)  A ∨ B           => [[Δ ⊢ A]; [Δ ⊢ B]]
             | _                                 => []
         end 
-    in intro_rules ++ map (apply_elim_rules C) (pick_hyp s).
+    in intro_rules ++ concat (map (apply_elim_rules C) (pick_hyp s)).
 
 Eval compute in (step ([x ∨ y] ⊢ z → t)).
 
@@ -216,6 +216,9 @@ Tactic Notation "sint" tactic(t) := t; simpl; intuition.
 Tactic Notation "sint_all" tactic(t) := t; simpl in *|-*; intuition.
 Tactic Notation "saut" tactic(t) := t; simpl; auto.
 Tactic Notation "saut_all" tactic(t) := t; simpl in *|-*; auto.
+Tactic Notation "s" tactic(t) := t; simpl.
+Tactic Notation "s_all" tactic(t) := t; simpl in *|-*.
+
 
 
 Open Scope nat_scope.
@@ -261,33 +264,36 @@ Ltac constructors_Forall := repeat (repeat apply Forall_nil; repeat apply Forall
 Ltac sum_map_app := repeat (rewrite map_app + rewrite sum_app).
 Ltac Forall_sum_map := constructors_Forall; saut sum_map_app.
 
+Ltac concat_Forall_app := rewrite concat_app; apply Forall_app.
+Tactic Notation "concat_Forall_app" "in" hyp(H) := rewrite concat_app in H; apply <- Forall_app in H.
+
 Lemma Forall_concat_prepend : forall l C n φ, 
-    Forall (fun s' : seq => size s' < n) (concat (map (apply_elim_rules C) l))
+    Forall (fun s' : seq => size s' < n) (concat (concat (map (apply_elim_rules C) l)))
     -> 
     Forall (fun s' : seq => size s' < size_form φ + n)
-        (concat (map (fun Γ => (apply_elim_rules C) (prepend φ Γ)) l)).
+    (concat (concat (map (fun Γ => (apply_elim_rules C) (prepend φ Γ)) l))).
 Proof.
-    intros; revert φ; sint induction l.  
-    rewrite <- Forall_app; split.
-    -   destruct a as (ψ, Δ); simpl.
-        simpl in H; apply <- Forall_app in H; destruct H as [? _].
+    intros; revert φ; sint induction l.
+    concat_Forall_app; split.
+    -   s_all destruct a as (ψ, Δ).
+        concat_Forall_app in H; destruct H as [? _].
         destruct ψ; Forall_sum_map; 
         repeat match goal with 
             | H : Forall _ _  |- _ => inversion H; clear H
         end; unfold size in * |-.
-        all: saut_all (repeat (rewrite map_app in * |- + rewrite sum_app in * |-)). 
-    -   apply IHl; simpl in * |-; apply <- Forall_app in H; now destruct H as [_ ?].
+        all: saut_all (repeat (rewrite map_app in * |- + rewrite sum_app in * |-)).
+    -   s_all apply IHl. concat_Forall_app in H; now destruct H as [_ ?].
 Qed.
 
 
 Theorem size_decreasing : forall s, Forall (fun s' => size s' < size s) (concat (step s)).
 Proof.
     destruct s; induction l; unfold step;
-    rewrite concat_app; repeat (apply Forall_app; saut split).
+    repeat (concat_Forall_app; saut split).
     1-3: destruct f; try destruct a; Forall_sum_map.
     simpl in IHl. rewrite pick_hyp_prepend. rewrite map_map.
-    rewrite concat_app in IHl; apply <- Forall_app in IHl; destruct IHl as [_ ?].
-    rewrite <- plus_assoc; now apply Forall_concat_prepend.
+    concat_Forall_app in IHl; destruct IHl as [_ ?].
+    rewrite <- plus_assoc. now apply Forall_concat_prepend.
 Qed.
 
 Fixpoint sem_val (valuation: Var -> Prop) (φ: form) : Prop := 
@@ -348,6 +354,11 @@ Proof.
         apply in_app_or in H; destruct H; [left; eauto | right; rewrite Exists_exists; eauto].
 Qed.
 
+Lemma Exists_prepend : forall l C φ, 
+Exists P (map (fun Γ => apply_elim_rules C (prepend φ Γ)) l) -> Exists P (map (apply_elim_rules C) l)
+Proof.
+Admitted.
+
 (* Ltac constructors_Exists := repeat (repeat apply Exists_cons_hd; repeat apply Exists_cons_tl; simpl). *)
 
 Theorem soundness_step : forall s, is_valid_subgoal (step s) -> is_valid_seq s.
@@ -362,8 +373,12 @@ Proof.
             1-2: int inversion H2.
         apply Exists_cons in H; destruct H; inversion H.
         apply (H4 valuation); aut rewrite <- Forall_app.
-    - 
-
+    -   saut_all induction l.
+        +   exfalso; now apply Exists_nil in H.
+        +   destruct a; rewrite pick_hyp_prepend in H; 
+            rewrite map_map in H.
+            inversion H0. apply Exists_exists in H. do 2 destruct H. 
+            aut apply IHl. apply Exists_exists. exists x1.
     
 
 
