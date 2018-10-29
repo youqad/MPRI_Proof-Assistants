@@ -354,30 +354,43 @@ Proof.
         apply in_app_or in H; destruct H; [left; eauto | right; rewrite Exists_exists; eauto].
 Qed.
 
-Lemma Exists_prepend : forall l C φ, 
-Exists P (map (fun Γ => apply_elim_rules C (prepend φ Γ)) l) -> Exists P (map (apply_elim_rules C) l)
+Lemma Exists_prepend : forall P l C φ, 
+Exists P (concat (map (fun Γ => apply_elim_rules C (prepend φ Γ)) l)) 
+-> Exists P (concat (map (apply_elim_rules C) l)).
 Proof.
+(* 
+    Exists (Forall is_valid_seq)
+        (concat
+            (map (fun Γ => apply_elim_rules C (prepend φ Γ)) l))
+    /\ ⟦ φ ⟧
+    ->
+    Exists (Forall is_valid_seq)
+        (concat (map (apply_elim_rules C) l)) *)
+
 Admitted.
 
 (* Ltac constructors_Exists := repeat (repeat apply Exists_cons_hd; repeat apply Exists_cons_tl; simpl). *)
+
+Tactic Notation "exfalso_Exists" "in" hyp(H) := exfalso; now apply Exists_nil in H.
+Tactic Notation "cons_destruct_inv" "in" hyp(H) := apply Exists_cons in H; destruct H; inversion H.
+
 
 Theorem soundness_step : forall s, is_valid_subgoal (step s) -> is_valid_seq s.
 Proof.
     unfold is_valid_subgoal; unfold is_valid_seq; unfold step;
     destruct s; intros; rewrite <- Exists_app in  *|-; destruct H.
     -   sint destruct f.
-        1-2: exfalso; now apply Exists_nil in H.
-        1-2: apply Exists_cons in H; destruct H; inversion H; int inversion H4.
-        apply Exists_cons in H; destruct H; 
-            int inversion H. 
+        1-2: exfalso_Exists in H.
+        1-2: cons_destruct_inv in H; int inversion H4.
+        int cons_destruct_inv in H.
             1-2: int inversion H2.
-        apply Exists_cons in H; destruct H; inversion H.
+        cons_destruct_inv in H.
         apply (H4 valuation); aut rewrite <- Forall_app.
     -   saut_all induction l.
-        +   exfalso; now apply Exists_nil in H.
+        +   exfalso_Exists in H.
         +   destruct a; rewrite pick_hyp_prepend in H; 
-            rewrite map_map in H.
-            inversion H0. apply Exists_exists in H. do 2 destruct H. 
+            s_all rewrite map_map in H.
+            inversion H0. cons_destruct_inv in H.
             aut apply IHl. apply Exists_exists. exists x1.
     
 
