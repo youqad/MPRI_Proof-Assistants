@@ -261,6 +261,7 @@ Proof.
 Qed.
 
 Ltac constructors_Forall := repeat (repeat apply Forall_nil; repeat apply Forall_cons; simpl).
+
 Ltac sum_map_app := repeat (rewrite map_app + rewrite sum_app).
 Ltac Forall_sum_map := constructors_Forall; saut sum_map_app.
 
@@ -354,20 +355,40 @@ Proof.
         apply in_app_or in H; destruct H; [left; eauto | right; rewrite Exists_exists; eauto].
 Qed.
 
-Lemma Exists_prepend : forall P l C φ, 
-Exists P (concat (map (fun Γ => apply_elim_rules C (prepend φ Γ)) l)) 
--> Exists P (concat (map (apply_elim_rules C) l)).
-Proof.
-(* 
+Lemma Exists_prepend : forall l C φ, 
     Exists (Forall is_valid_seq)
-        (concat
-            (map (fun Γ => apply_elim_rules C (prepend φ Γ)) l))
-    /\ ⟦ φ ⟧
+            (concat
+                (map (fun Γ => apply_elim_rules C (prepend φ Γ)) l))
     ->
-    Exists (Forall is_valid_seq)
-        (concat (map (apply_elim_rules C) l)) *)
-
+    Exists (Forall 
+        (fun '(Δ ⊢ A) =>
+            forall valuation : Var -> Prop, 
+            Forall (sem_val valuation) (φ :: Δ) -> ⟦ A ⟧_ valuation))
+        (concat (map (apply_elim_rules C) l)).
+Proof.
 Admitted.
+
+Lemma In_pick_hyp: forall l f x, In x (pick_hyp (l ⊢ f)) -> exists h l_1 l_2, x = (h, l_1 ++ l_2) /\ l = l_1 ++ h :: l_2.
+Proof.
+    sint_all induction l. 
+    -   now exists a, nil, l. 
+    -   rewrite pick_hyp_prepend in H1. 
+        apply in_map_iff in H1; destruct H1; destruct H0.
+        apply H in H1. unfold prepend in H0. destruct x1 eqn:?.
+        do 4 destruct H1. inversion H1.
+        (sint (exists f0, (a::x3), x4)). 
+            aut rewrite <- H5.
+            aut rewrite <- H4 in H2; rewrite <- H2.
+Qed.
+
+Fact in_cons_app : forall (A: Type) (a b:A) (l l':list A), In b (l ++ l') -> In b (l ++ a :: l').
+Proof.
+    intros; apply in_app_iff; apply in_app_iff in H; 
+    destruct H; [now left | right; now apply in_cons].
+Qed.
+
+Hint Resolve in_cons_app.
+
 
 (* Ltac constructors_Exists := repeat (repeat apply Exists_cons_hd; repeat apply Exists_cons_tl; simpl). *)
 
@@ -375,23 +396,40 @@ Tactic Notation "exfalso_Exists" "in" hyp(H) := exfalso; now apply Exists_nil in
 Tactic Notation "cons_destruct_inv" "in" hyp(H) := apply Exists_cons in H; destruct H; inversion H.
 
 
+
 Theorem soundness_step : forall s, is_valid_subgoal (step s) -> is_valid_seq s.
 Proof.
     unfold is_valid_subgoal; unfold is_valid_seq; unfold step;
-    destruct s; intros; rewrite <- Exists_app in  *|-; destruct H.
-    -   sint destruct f.
+    destruct s; rewrite <- Exists_app; intro; destruct H; intros.
+    -   intros; sint destruct f.
         1-2: exfalso_Exists in H.
         1-2: cons_destruct_inv in H; int inversion H4.
         int cons_destruct_inv in H.
             1-2: int inversion H2.
         cons_destruct_inv in H.
         apply (H4 valuation); aut rewrite <- Forall_app.
-    -   saut_all induction l.
+    -   apply Exists_exists in H; do 2 destruct H.
+        rewrite <- flat_map_concat_map in H; apply in_flat_map in H; do 2 destruct H.
+        apply In_pick_hyp in H; do 4 destruct H.
+        rewrite H in H2; sint_all destruct x2 eqn:?.
+        all: rewrite <- H4 in H1; apply Forall_inv in H1; apply H1.
+        all: apply Forall_forall; intros; apply in_app_or in H2; int destruct H2.
+        all: match goal with 
+            | _: In ?X (_ ++ _) |- _ => apply Forall_forall with (x := X) in H0; [intuition | int rewrite H3]
+            | _ => simpl in H2
+        end.
+        1-2:  destruct H2; apply Forall_forall with (x := x2) in H0;
+            int (rewrite Heqf0 in H0; simpl in H0) || subst);
+            int (rewrite H2 in H5 || rewrite H2 in H6).
+            aut rewrite H0 in H3.
+            destruct H2; apply Forall_forall with (x := x2) in H0; int simpl in H0. 
+
+        (* saut_all induction l.
         +   exfalso_Exists in H.
-        +   destruct a; rewrite pick_hyp_prepend in H; 
+        +   destruct a; rewrite pick_hyp_prepend in H;
             s_all rewrite map_map in H.
-            inversion H0. cons_destruct_inv in H.
-            aut apply IHl. apply Exists_exists. exists x1.
+            inversion H0. apply Exists_exists in H. destruct H.
+            aut apply IHl. apply Exists_exists. exists x1. *)
     
 
 
