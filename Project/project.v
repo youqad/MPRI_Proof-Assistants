@@ -355,19 +355,6 @@ Proof.
         apply in_app_or in H; destruct H; [left; eauto | right; rewrite Exists_exists; eauto].
 Qed.
 
-Lemma Exists_prepend : forall l C φ, 
-    Exists (Forall is_valid_seq)
-            (concat
-                (map (fun Γ => apply_elim_rules C (prepend φ Γ)) l))
-    ->
-    Exists (Forall 
-        (fun '(Δ ⊢ A) =>
-            forall valuation : Var -> Prop, 
-            Forall (sem_val valuation) (φ :: Δ) -> ⟦ A ⟧_ valuation))
-        (concat (map (apply_elim_rules C) l)).
-Proof.
-Admitted.
-
 Lemma In_pick_hyp: forall l f x, In x (pick_hyp (l ⊢ f)) -> exists h l_1 l_2, x = (h, l_1 ++ l_2) /\ l = l_1 ++ h :: l_2.
 Proof.
     sint_all induction l. 
@@ -386,16 +373,19 @@ Proof.
     intros; apply in_app_iff; apply in_app_iff in H; 
     destruct H; [now left | right; now apply in_cons].
 Qed.
-
 Hint Resolve in_cons_app.
-
-
-(* Ltac constructors_Exists := repeat (repeat apply Exists_cons_hd; repeat apply Exists_cons_tl; simpl). *)
 
 Tactic Notation "exfalso_Exists" "in" hyp(H) := exfalso; now apply Exists_nil in H.
 Tactic Notation "cons_destruct_inv" "in" hyp(H) := apply Exists_cons in H; destruct H; inversion H.
 
-
+Tactic Notation "Forall_in_app_or" hyp(H0) := apply Forall_forall; intros; 
+    match goal with 
+        | H : In _ (_ ++ _) |- _ => apply in_app_or in H; int destruct H
+    end;
+    match goal with 
+        | _ : In ?X (_ ++ _) |- _ => int apply Forall_forall with (x := X) in H0
+        | _ => idtac
+    end.
 
 Theorem soundness_step : forall s, is_valid_subgoal (step s) -> is_valid_seq s.
 Proof.
@@ -412,25 +402,33 @@ Proof.
         rewrite <- flat_map_concat_map in H; apply in_flat_map in H; do 2 destruct H.
         apply In_pick_hyp in H; do 4 destruct H.
         rewrite H in H2; sint_all destruct x2 eqn:?.
-        all: rewrite <- H4 in H1; apply Forall_inv in H1; apply H1.
-        all: apply Forall_forall; intros; apply in_app_or in H2; int destruct H2.
-        all: match goal with 
-            | _: In ?X (_ ++ _) |- _ => apply Forall_forall with (x := X) in H0; [intuition | int rewrite H3]
-            | _ => simpl in H2
-        end.
-        1-2:  destruct H2; apply Forall_forall with (x := x2) in H0;
-            int (rewrite Heqf0 in H0; simpl in H0) || subst);
-            int (rewrite H2 in H5 || rewrite H2 in H6).
-            aut rewrite H0 in H3.
-            destruct H2; apply Forall_forall with (x := x2) in H0; int simpl in H0. 
+        all: rewrite <- H4 in H1; repeat match goal with 
+            | H : context [ Forall _ (_ :: _) ] |- _ => inversion_clear H
+            | H : context [ Forall _ nil ] |- _ => clear H
+        end; rewrite H3 in H0; rewrite <- Heqf0 in H0; 
+        pose proof H0 as Hx2; int apply Forall_forall with (x := x2) in Hx2; 
+        rewrite Heqf0 in Hx2; int simpl in Hx2.
+        all:    swap 3 4.
+        1-3:    apply H2.
+        4:      apply H1.
+        all:    Forall_in_app_or H0; 
+                try int simpl in H6; try (int simpl in H5); 
+                try (rewrite <- H6); try (rewrite <- H7).
+        int simpl in H5. rewrite <- H6. apply Hx2.
+        apply H1. Forall_in_app_or H0; 
+        int apply Forall_forall with (x := x6) in H0.
+Qed.
 
-        (* saut_all induction l.
-        +   exfalso_Exists in H.
-        +   destruct a; rewrite pick_hyp_prepend in H;
-            s_all rewrite map_map in H.
-            inversion H0. apply Exists_exists in H. destruct H.
-            aut apply IHl. apply Exists_exists. exists x1. *)
-    
-
-
-
+Theorem soundness_tauto: forall n s, tauto n s = true -> is_valid_seq s.
+Proof.
+    int induction n. simpl in H.
+    sint_all case_eq (is_leaf s).
+    -   now apply soundness_leaf.
+    -   rewrite H0 in H. 
+        apply existsb_exists in H; do 2 destruct H.
+        rewrite forallb_forall in H1.
+        int assert (forall x : seq, In x x0 -> is_valid_seq x) as H_in_valid.
+        rewrite <- Forall_forall in H_in_valid.
+        assert (exists x, In x (step s) /\ Forall is_valid_seq x) as H_exists; eauto.
+        apply Exists_exists in H_exists; now apply soundness_step.
+Qed.
