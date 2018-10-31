@@ -421,8 +421,7 @@ Qed.
 
 Theorem soundness_tauto: forall n s, tauto n s = true -> is_valid_seq s.
 Proof.
-    int induction n. simpl in H.
-    sint_all case_eq (is_leaf s).
+    int induction n. simpl in H; sint_all case_eq (is_leaf s).
     -   now apply soundness_leaf.
     -   rewrite H0 in H. 
         apply existsb_exists in H; do 2 destruct H.
